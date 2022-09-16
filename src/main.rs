@@ -7,8 +7,7 @@ use cortex_m::prelude::*;
 use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::digital::v2::OutputPin;
-use embedded_time::fixed_point::FixedPoint;
-use embedded_time::rate::Kilohertz;
+use fugit::RateExtU32;
 use hal::{
     clocks::{init_clocks_and_plls, Clock},
     pac,
@@ -38,7 +37,7 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
-    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().integer());
+    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
 
     let pins = bsp::Pins::new(
         pac.IO_BANK0,
@@ -54,9 +53,9 @@ fn main() -> ! {
         pac.I2C1,
         sda_pin,
         scl_pin,
-        Kilohertz(400),
+        400.kHz(),
         &mut pac.RESETS,
-        clocks.peripheral_clock,
+        &clocks.peripheral_clock,
     );
 
     {
