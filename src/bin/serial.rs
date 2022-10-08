@@ -2,8 +2,10 @@
 #![no_main]
 #![warn(clippy::pedantic, clippy::nursery)]
 
+use ahrs::{Ahrs, Madgwick};
 use bsp::entry;
 use bsp::hal;
+use core::f32::consts::PI;
 use core::fmt::Write;
 use cortex_m::prelude::*;
 use defmt::{error, info};
@@ -14,6 +16,8 @@ use embedded_hal::timer::CountDown;
 use fugit::ExtU32;
 use fugit::RateExtU32;
 use hal::{clocks::init_clocks_and_plls, pac, sio::Sio, watchdog::Watchdog};
+use nalgebra::Vector3;
+use num_traits::ops::euclid::Euclid;
 use panic_probe as _;
 use rp_pico as bsp;
 #[allow(clippy::wildcard_imports)]
@@ -68,8 +72,8 @@ fn main() -> ! {
         i2c.write_read(0x68, &[0u8], &mut buffer).unwrap();
         //expect EA
         info!("ID: {:X}", buffer);
-        assert!(
-            buffer[0] == 0xEA,
+        assert_eq!(
+            buffer[0], 0xEA,
             "Unexpected i2c device id {:X}, expected 0xEA",
             buffer[0]
         );
@@ -102,24 +106,31 @@ fn main() -> ! {
     let mut log_count_down = timer.count_down();
     log_count_down.start(100.millis());
 
+    let mut ahrs = Madgwick::<f32>::new(0.1, 0.1);
+
     loop {
         // A welcome message at the beginning
         if log_count_down.wait().is_ok() {
-            let mut s = heapless::String::<64>::new();
+            let r = read_imu(&mut i2c);
+            if r.is_err() {
+                continue;
+            }
+            let (gyro, acc) = r.unwrap();
 
-            let mut buffer = [0; 12];
+            let quat = ahrs.update_imu(&gyro, &acc).unwrap();
 
-            i2c.write_read(0x68, &[0x2Du8], &mut buffer).unwrap();
+            let (roll, pitch, yaw) = quat.euler_angles();
 
+            let mut s = heapless::String::<256>::new();
             core::write!(
                 &mut s,
                 "/*{},{},{},{},{},{}*/\n",
-                i16::from_be_bytes([buffer[0], buffer[1]]),
-                i16::from_be_bytes([buffer[2], buffer[3]]),
-                i16::from_be_bytes([buffer[4], buffer[5]]),
-                i16::from_be_bytes([buffer[6], buffer[7]]),
-                i16::from_be_bytes([buffer[8], buffer[9]]),
-                i16::from_be_bytes([buffer[10], buffer[11]])
+                acc.x,
+                acc.y,
+                acc.y,
+                (roll.to_degrees()).rem_euclid(&360.0),
+                (pitch.to_degrees()).rem_euclid(&360.0),
+                (yaw.to_degrees()).rem_euclid(&360.0)
             )
             .unwrap();
 
@@ -141,4 +152,25 @@ fn main() -> ! {
             }
         }
     }
+}
+
+fn read_imu<I: embedded_hal::blocking::i2c::WriteRead>(
+    i2c: &mut I,
+) -> Result<(Vector3<f32>, Vector3<f32>), I::Error> {
+    let mut buffer = [0; 12];
+
+    i2c.write_read(0x68, &[0x2Du8], &mut buffer)?;
+
+    let acc_x = f32::from(i16::from_be_bytes([buffer[0], buffer[1]]));
+    let acc_y = f32::from(i16::from_be_bytes([buffer[2], buffer[3]]));
+    let acc_z = f32::from(i16::from_be_bytes([buffer[4], buffer[5]]));
+
+    let gyr_x = f32::from(i16::from_be_bytes([buffer[6], buffer[7]]));
+    let gyr_y = f32::from(i16::from_be_bytes([buffer[8], buffer[9]]));
+    let gyr_z = f32::from(i16::from_be_bytes([buffer[10], buffer[11]]));
+
+    let gyro = Vector3::new(gyr_x, gyr_y, gyr_z) * (PI / 180.0) / 131.0;
+
+    let acc = Vector3::new(acc_x, acc_y, acc_z) / 16384.0;
+    Ok((gyro, acc))
 }
