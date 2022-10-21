@@ -51,8 +51,9 @@ jobs:
       - run: rustup target install thumbv6m-none-eabi
       - run: cargo clippy --all-features -- -D warnings
         working-directory: ./app
-      - run: cargo clippy --all-features -- -D warnings
-        working-directory: ./tools/vis
+      # - run: cargo clippy --all-features -- -D warnings
+      #   working-directory: ./tools/vis
+      # Needs native dependencies installing
   formatting:
     name: Formatting
     runs-on: ubuntu-latest
