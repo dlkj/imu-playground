@@ -4,6 +4,10 @@ updates:
     directory: "/app"
     schedule:
       interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "/tools/vis"
+    schedule:
+      interval: "daily"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
