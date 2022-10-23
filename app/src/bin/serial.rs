@@ -162,7 +162,7 @@ fn write_to_serial<U: UsbBus, P: ToggleableOutputPin + OutputPin>(
     let mut s = heapless::String::<256>::new();
     core::write!(
         &mut s,
-        "/*{},{},{},{},{},{},{},{},{}*/\r\n",
+        "{},{},{},{},{},{},{},{},{}\r\n",
         acc.x,
         acc.y,
         acc.y,

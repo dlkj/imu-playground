@@ -1,29 +1,59 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![allow(clippy::missing_errors_doc)]
 
+use csv::StringRecord;
+use serde::Deserialize;
 use serialport::{ClearBuffer, SerialPortInfo, SerialPortType};
-use std::io;
-use std::io::Write;
+use std::io::BufRead;
+use std::io::BufReader;
 use std::time::Duration;
+
+#[derive(Debug, Deserialize)]
+struct Record {
+    acc_x: f32,
+    acc_y: f32,
+    acc_z: f32,
+    mag_x: f32,
+    mag_y: f32,
+    mag_z: f32,
+    roll: f32,
+    pitch: f32,
+    yaw: f32,
+}
 
 fn main() {
     let port_info = find_usb_serial_port(0x04b9, 0x0010).expect("Failed to find port");
 
     let port = serialport::new(&port_info.port_name, 115_200)
-        .timeout(Duration::from_millis(10))
+        .timeout(Duration::from_millis(100))
         .open();
 
     match port {
-        Ok(mut port) => {
+        Ok(port) => {
+            println!("Receiving data from {}", &port_info.port_name);
+
+            //clear any data in the buffers
             port.clear(ClearBuffer::All)
                 .expect("Failed to clear port buffers");
-            let mut serial_buf: Vec<u8> = vec![0; 1000];
-            println!("Receiving data from {}", &port_info.port_name);
+
+            //read and discard the first new line of data - could be incomplete
+            let mut discard = String::new();
+            let mut serial_reader = BufReader::new(port);
+            serial_reader
+                .read_line(&mut discard)
+                .expect("Failed to read first line of serial data");
+
+            let mut csv_reader = csv::Reader::from_reader(serial_reader);
+
+            let mut r = StringRecord::new();
+
             loop {
-                match port.read(serial_buf.as_mut_slice()) {
-                    Ok(t) => io::stdout().write_all(&serial_buf[..t]).unwrap(),
-                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
-                    Err(e) => eprintln!("{:?}", e),
+                if csv_reader
+                    .read_record(&mut r)
+                    .expect("Failed to read CSV record")
+                {
+                    let rec: Record = r.deserialize(None).expect("Failed to deserialise record");
+                    println!("{:?}", rec);
                 }
             }
         }
