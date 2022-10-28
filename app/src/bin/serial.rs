@@ -17,7 +17,6 @@ use fugit::RateExtU32;
 use hal::{clocks::init_clocks_and_plls, pac, sio::Sio, watchdog::Watchdog};
 use imu_playground::Imc20948;
 use nalgebra::{UnitQuaternion, Vector3};
-use num_traits::ops::euclid::Euclid;
 use panic_probe as _;
 use rp_pico as bsp;
 #[allow(clippy::wildcard_imports)]
@@ -164,7 +163,7 @@ fn write_to_serial<U: UsbBus, P: ToggleableOutputPin + OutputPin>(
         "{},{},{},{},{},{},{},{},{}\r\n",
         acc.x,
         acc.y,
-        acc.y,
+        acc.z,
         mag.x,
         mag.y,
         mag.z,

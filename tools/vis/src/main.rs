@@ -14,33 +14,31 @@ use csv::StringRecord;
 use serde::Deserialize;
 use serialport::{ClearBuffer, SerialPortInfo, SerialPortType};
 
-#[derive(Component)]
-struct Rotator;
-
 fn main() {
     App::new()
-        .add_event::<StreamEvent>()
+        .add_event::<ImuDataEvent>()
         .add_plugins(DefaultPlugins)
         .add_startup_system(startup)
         .add_system(read_stream)
-        .add_system(rotator_system)
-        .add_system(data_pointer_system)
+        .add_system(orientation_system)
+        .add_system(acceleration_system)
         .add_system(camera_controller)
+        .add_system(hud_system)
         .run();
 }
 
 #[derive(Deref)]
-struct StreamReceiver(Receiver<Record>);
-struct StreamEvent(Record);
+struct StreamReceiver(Receiver<ImuData>);
+struct ImuDataEvent(ImuData);
 
 #[derive(Debug, Deserialize)]
-struct Record {
+struct ImuData {
     acc_x: f32,
     acc_y: f32,
     acc_z: f32,
-    mag_x: f32,
-    mag_y: f32,
-    mag_z: f32,
+    _mag_x: f32,
+    _mag_y: f32,
+    _mag_z: f32,
     roll: f32,
     pitch: f32,
     yaw: f32,
@@ -50,8 +48,9 @@ fn startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
-    let (tx, rx) = bounded::<Record>(10);
+    let (tx, rx) = bounded::<ImuData>(10);
 
     thread::spawn(|| serial_read_loop(tx));
 
@@ -63,50 +62,49 @@ fn startup(
         ..default()
     });
 
-    // let cube_handle = meshes.add(Mesh::from(shape::Cube { size: 1.0 }));
-    // let cube_material_handle = materials.add(Color::rgb(0.8, 0.7, 0.6).into());
-
-    // commands
-    //     .spawn_bundle(PbrBundle {
-    //         mesh: cube_handle.clone(),
-    //         material: cube_material_handle.clone(),
-    //         transform: Transform::from_xyz(0.0, 0.5, 0.0),
-    //         ..default()
-    //     })
-    //     .insert(Rotator)
-    //     .with_children(|parent| {
-    //         parent.spawn_bundle(PbrBundle {
-    //             mesh: cube_handle,
-    //             material: cube_material_handle,
-    //             transform: Transform::from_xyz(1.0, 1.0, 1.0),
-    //             ..default()
-    //         });
-    //     });
-
     commands
         .spawn_bundle(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-            material: materials.add(Color::rgb(0.3, 0.3, 0.8).into()),
-            transform: Transform::from_xyz(0.0, 1.0, 0.0).with_scale(Vec3::from((1.0, 0.1, 0.5))),
+            transform: Transform::from_xyz(0.0, 1.0, 0.0),
             ..default()
         })
-        .insert(DataPointer)
+        .insert(Orientation)
         .with_children(|parent| {
+            // circit board
+            parent.spawn_bundle(PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+                material: materials.add(Color::rgb(0.3, 0.3, 0.8).into()),
+                transform: Transform::from_scale(Vec3::from((1.0, 0.1, 0.5))),
+                ..default()
+            });
+
+            // connector
             parent.spawn_bundle(PbrBundle {
                 mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
                 material: materials.add(Color::rgb(0.8, 0.3, 0.3).into()),
                 transform: Transform::from_xyz(0.5, 0.0, 0.0)
-                    .with_scale(Vec3::from((0.1, 1.5, 1.5))),
+                    .with_scale(Vec3::from((0.1, 0.2, 0.6))),
                 ..default()
             });
 
+            // chips
             parent.spawn_bundle(PbrBundle {
                 mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
                 material: materials.add(Color::rgb(0.8, 0.3, 0.3).into()),
-                transform: Transform::from_xyz(0.0, 0.5, 0.0)
-                    .with_scale(Vec3::from((0.5, 1.0, 0.5))),
+                transform: Transform::from_xyz(0.0, 0.1, 0.0)
+                    .with_scale(Vec3::from((0.5, 0.1, 0.3))),
                 ..default()
             });
+
+            //acceleration marker
+            parent
+                .spawn_bundle(PbrBundle {
+                    mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+                    material: materials.add(Color::rgb(0.8, 0.8, 0.3).into()),
+                    transform: Transform::from_xyz(0.0, 1.0, 0.0)
+                        .with_scale(Vec3::from((0.1, 0.1, 0.1))),
+                    ..default()
+                })
+                .insert(Acceleration);
         });
 
     // light
@@ -127,9 +125,30 @@ fn startup(
             ..default()
         })
         .insert(CameraController::default());
+
+    // scoreboard
+    commands.spawn_bundle(
+        TextBundle::from_section(
+            "Score:",
+            TextStyle {
+                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 16.0,
+                color: Color::rgb(0.9, 0.9, 0.9),
+            },
+        )
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            position: UiRect {
+                top: Val::Px(5.0),
+                left: Val::Px(5.0),
+                ..default()
+            },
+            ..default()
+        }),
+    );
 }
 
-fn serial_read_loop(tx: Sender<Record>) -> ! {
+fn serial_read_loop(tx: Sender<ImuData>) -> ! {
     let port_info = find_usb_serial_port(0x04b9, 0x0010).expect("Failed to find port");
 
     let port = serialport::new(&port_info.port_name, 115_200)
@@ -160,7 +179,7 @@ fn serial_read_loop(tx: Sender<Record>) -> ! {
                     .read_record(&mut r)
                     .expect("Failed to read CSV record")
                 {
-                    let rec: Record = r.deserialize(None).expect("Failed to deserialise record");
+                    let rec: ImuData = r.deserialize(None).expect("Failed to deserialise record");
                     // println!("{:?}", &rec);
                     tx.send(rec).expect("Failed to send data to channel");
                 }
@@ -187,28 +206,54 @@ fn find_usb_serial_port(vid: u16, pid: u16) -> Option<SerialPortInfo> {
         .expect("Failed to list available serial ports")
 }
 
-fn read_stream(receiver: ResMut<StreamReceiver>, mut events: EventWriter<StreamEvent>) {
+fn read_stream(receiver: ResMut<StreamReceiver>, mut events: EventWriter<ImuDataEvent>) {
     for event in receiver.try_iter() {
-        events.send(StreamEvent(event));
-    }
-}
-
-fn rotator_system(time: Res<Time>, mut query: Query<&mut Transform, With<Rotator>>) {
-    for mut transform in &mut query {
-        transform.rotate_y(1.0 * time.delta_seconds());
+        events.send(ImuDataEvent(event));
     }
 }
 
 #[derive(Component)]
-struct DataPointer;
+struct Orientation;
 
-fn data_pointer_system(
-    mut reader: EventReader<StreamEvent>,
-    mut query: Query<&mut Transform, With<DataPointer>>,
+fn orientation_system(
+    mut reader: EventReader<ImuDataEvent>,
+    mut query: Query<&mut Transform, With<Orientation>>,
 ) {
-    if let Some(StreamEvent(e)) = reader.iter().last() {
+    if let Some(ImuDataEvent(e)) = reader.iter().last() {
         for mut transform in &mut query {
             transform.rotation = Quat::from_euler(EulerRot::YXZ, e.yaw, e.pitch, e.roll);
+        }
+    }
+}
+
+#[derive(Component)]
+struct Acceleration;
+
+fn acceleration_system(
+    mut reader: EventReader<ImuDataEvent>,
+    mut query: Query<&mut Transform, With<Acceleration>>,
+) {
+    if let Some(ImuDataEvent(e)) = reader.iter().last() {
+        for mut transform in &mut query {
+            transform.translation = Vec3::from((e.acc_y, e.acc_z, e.acc_x));
+        }
+    }
+}
+
+fn hud_system(mut reader: EventReader<ImuDataEvent>, mut query: Query<&mut Text>) {
+    if let Some(ImuDataEvent(e)) = reader.iter().last() {
+        for mut text in &mut query {
+            if let Some(t) = text.sections.first_mut() {
+                t.value = format!(
+                    "yaw:{:.02} pitch:{:.02} roll:{:.02}\nAcc:{:.02}, {:.02}, {:.02}",
+                    e.yaw / PI * 180.0,
+                    e.pitch / PI * 180.0,
+                    e.roll / PI * 180.0,
+                    e.acc_x,
+                    e.acc_y,
+                    e.acc_z
+                );
+            }
         }
     }
 }
