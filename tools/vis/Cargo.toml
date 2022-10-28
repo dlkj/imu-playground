@@ -5,6 +5,10 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.8"
+crossbeam-channel = "0.5"
+csv = "1.1"
+serde = "1.0"
+serialport = "4.2"
 
 # From https://bevyengine.org/learn/book/getting-started/setup/#compile-with-performance-optimizations
 # Enable a small amount of optimization in debug mode

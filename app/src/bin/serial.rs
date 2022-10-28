@@ -130,7 +130,8 @@ fn main() -> ! {
                 n = 0;
             }
 
-            let quat = ahrs.update(&gyro, &acc, &rm).unwrap();
+            // let quat = ahrs.update(&gyro, &acc, &rm).unwrap();
+            let quat = ahrs.update_imu(&gyro, &acc).unwrap();
 
             write_to_serial(&mut serial, &mut led_pin, acc, rm, quat);
         }
@@ -157,8 +158,6 @@ fn write_to_serial<U: UsbBus, P: ToggleableOutputPin + OutputPin>(
 ) {
     let (roll, pitch, yaw) = quat.euler_angles();
 
-    let deg = 360.0f32;
-
     let mut s = heapless::String::<256>::new();
     core::write!(
         &mut s,
@@ -169,9 +168,9 @@ fn write_to_serial<U: UsbBus, P: ToggleableOutputPin + OutputPin>(
         mag.x,
         mag.y,
         mag.z,
-        (roll.to_degrees()).rem_euclid(&deg),
-        (pitch.to_degrees()).rem_euclid(&deg),
-        (yaw.to_degrees()).rem_euclid(&deg)
+        roll,
+        pitch,
+        yaw
     )
     .unwrap();
 
