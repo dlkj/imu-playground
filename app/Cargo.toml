@@ -14,7 +14,7 @@ defmt = "0.3"
 defmt-rtt = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 
-rp-pico = { version = "0.5", features = ["rp2040-e5"] }
+rp-pico = { version = "0.6", features = ["rp2040-e5"] }
 usb-device = { version = "0.2", features = ["defmt"]}
 usbd-serial = "0.1"
 heapless = { version = "0.7", features = ["defmt"] }
